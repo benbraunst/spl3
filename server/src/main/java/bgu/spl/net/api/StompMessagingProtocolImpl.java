@@ -10,19 +10,13 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     boolean shouldTerminate = false;
     User currentUser;
 
-    // TODO: Constructors
-    public StompMessagingProtocolImpl(int connectionId, Connections<String> connections, boolean shouldTerminate,
-            User currentUser) {
-        this.connectionId = connectionId;
-        this.connections = connections;
-        this.shouldTerminate = shouldTerminate;
-        this.currentUser = currentUser;
-    }
+    // TODO
+    public StompMessagingProtocolImpl() {}
 
     @Override
     public void start(int connectionId, Connections<String> connections) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'start'");
+        this.connectionId = connectionId;
+        this.connections = connections;
     }
 
     @Override
