@@ -1,8 +1,7 @@
 package bgu.spl.net.impl.stomp;
 
-import bgu.spl.net.srv.Server;
 import bgu.spl.net.srv.Reactor;
-
+import bgu.spl.net.srv.Server;
 
 public class StompServer {
 
@@ -21,22 +20,25 @@ public class StompServer {
         }
         
         String serverType = args[1];
+        Server<String> server;
 
         if (serverType.equals("tpc")) {
-            new TPCServer<>(
+            server = new TPCServer<>(
                     port,
                     () -> new StompMessagingProtocolImpl(), // Protocol factory
                     () -> new StompEncoderDecoder()         // Encoder factory
-            ).serve();
+            );
+            server.serve();
         } 
         
         else if (serverType.equals("reactor")) {
-            new Reactor<>(
+            server = new Reactor<>(
                     2, 
                     port,
                     () -> new StompMessagingProtocolImpl(), // Protocol factory
                     () -> new StompEncoderDecoder()         // Encoder factory
-            ).serve();
+            );
+            server.serve();
         } 
         
         else {
