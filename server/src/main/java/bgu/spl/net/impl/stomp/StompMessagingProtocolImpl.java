@@ -137,14 +137,12 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             return;
         }
         
-        // Construct MESSAGE frame
-        String msgFrame = "MESSAGE\n" +
-                          "destination:" + destination + "\n" +
-                          "message-id:" + java.util.UUID.randomUUID().toString() + "\n" +
-                          "\n" +
-                          body;
-                          
-        connections.send(destination, msgFrame);
+        connections.send(destination, body);
+        
+        String receipt = headers.get("receipt");
+        if (receipt != null) {
+            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+        }
     }
 
     private void handleSubscribe(Map<String, String> headers) {
@@ -162,7 +160,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         }
         
         subscriptionIdToChannel.put(id, destination);
-        connections.subscribe(destination, connectionId);
+        connections.subscribe(destination, connectionId, id);
         
         if (receipt != null) {
              connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
