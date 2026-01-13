@@ -118,9 +118,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
     private void handleDisconnect(Map<String, String> headers) {
         String receipt = headers.get("receipt");
-        if (receipt != null) {
-            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
-        }
+        sendReceipt(receipt);
         Database.getInstance().logout(connectionId);
         shouldTerminate = true;
         connections.disconnect(connectionId);
@@ -140,9 +138,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         connections.send(destination, body);
         
         String receipt = headers.get("receipt");
-        if (receipt != null) {
-            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
-        }
+        sendReceipt(receipt);
     }
 
     private void handleSubscribe(Map<String, String> headers) {
@@ -162,9 +158,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         subscriptionIdToChannel.put(id, destination);
         connections.subscribe(destination, connectionId, id);
         
-        if (receipt != null) {
-             connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
-        }
+        sendReceipt(receipt);
     }
 
     private void handleUnsubscribe(Map<String, String> headers) {
@@ -185,8 +179,12 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             connections.unsubscribe(channel, connectionId);
         }
         
-        if (receipt != null) {
-             connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+        sendReceipt(receipt);
+    }
+    
+    private void sendReceipt(String receiptId) {
+        if (receiptId != null) {
+            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receiptId + "\n\n");
         }
     }
     
