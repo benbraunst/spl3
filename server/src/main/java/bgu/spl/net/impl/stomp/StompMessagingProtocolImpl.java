@@ -2,7 +2,7 @@ package bgu.spl.net.impl.stomp;
 
 import bgu.spl.net.impl.data.LoginStatus;
 import bgu.spl.net.impl.data.Database;
-import bgu.spl.net.srv.ConnectionsImpl;
+// import bgu.spl.net.srv.ConnectionsImpl; removed unused
 import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.srv.Connections;
 import java.util.HashMap;
@@ -14,7 +14,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private Connections<String> connections;
     private boolean shouldTerminate = false;
     private boolean isLoggedIn = false;
-    private String username;
+    // private String username;
     private Map<String, String> subscriptionIdToChannel = new HashMap<>(); // subId -> channel
 
     @Override
@@ -102,7 +102,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             status == LoginStatus.ADDED_NEW_USER) {
             
             isLoggedIn = true;
-            username = login;
+            // username = login;
             connections.send(connectionId, "CONNECTED\nversion:1.2\n\n");
         } else {
             String errorMsg = "Login failed";
@@ -156,7 +156,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         }
         
         subscriptionIdToChannel.put(id, destination);
-        connections.subscribe(destination, connectionId, id);
+        connections.subscribe(destination, connectionId, Integer.parseInt(id));
         
         sendReceipt(receipt);
     }

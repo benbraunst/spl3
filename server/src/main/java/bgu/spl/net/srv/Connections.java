@@ -10,7 +10,7 @@ public interface Connections<T> {
 
     void disconnect(int connectionId);
 
-    void subscribe(String channel, int connectionId, String subscriptionId);
+    void subscribe(String channel, int connectionId, int subscriptionId);
 
     void unsubscribe(String channel, int connectionId);
 }
