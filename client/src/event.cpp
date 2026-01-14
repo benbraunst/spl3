@@ -63,6 +63,47 @@ const std::string &Event::get_discription() const
 
 Event::Event(const std::string &frame_body) : team_a_name(""), team_b_name(""), name(""), time(0), game_updates(), team_a_updates(), team_b_updates(), description("")
 {
+    std::stringstream ss(frame_body);
+    std::string line;
+    std::string current_map = "";
+
+    while (std::getline(ss, line)) {
+        if (line.back() == '\r') line.pop_back(); // Handle potential Windows line endings
+        if (line.empty()) continue;
+
+        if (line.find("team a:") == 0) {
+            team_a_name = line.substr(7);
+        } else if (line.find("team b:") == 0) {
+            team_b_name = line.substr(7);
+        } else if (line.find("event name:") == 0) {
+            name = line.substr(11);
+        } else if (line.find("time:") == 0) {
+            time = std::stoi(line.substr(5));
+        } else if (line == "general game updates:") {
+            current_map = "general";
+        } else if (line == "team a updates:") {
+            current_map = "team_a";
+        } else if (line == "team b updates:") {
+            current_map = "team_b";
+        } else if (line == "description:") {
+            current_map = "description";
+        } else {
+            // Processing map entries or description
+            if (current_map == "description") {
+                if (!description.empty()) description += "\n";
+                description += line;
+            } else if (line[0] == '\t') { // Tab indented header
+                size_t colon = line.find(':');
+                if (colon != std::string::npos) {
+                    std::string key = line.substr(1, colon - 1);
+                    std::string val = line.substr(colon + 1);
+                    if (current_map == "general") game_updates[key] = val;
+                    else if (current_map == "team_a") team_a_updates[key] = val;
+                    else if (current_map == "team_b") team_b_updates[key] = val;
+                }
+            }
+        }
+    }
 }
 
 names_and_events parseEventsFile(std::string json_path)
