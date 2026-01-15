@@ -175,14 +175,19 @@ public class Database {
 		String usersSQL = "SELECT username, registration_date FROM users ORDER BY registration_date";
 		String usersResult = executeSQL(usersSQL);
 		if (usersResult.startsWith("SUCCESS")) {
-			String[] parts = usersResult.split("\\|");
-			if (parts.length > 1) {
-				for (int i = 1; i < parts.length; i++) {
-					System.out.println("   " + parts[i]);
+			String[] rows = usersResult.split("\\|");
+			if (rows.length > 1) {
+				for (int i = 1; i < rows.length; i++) {
+					String[] fields = rows[i].split(",");
+					if (fields.length >= 2) {
+						System.out.println("   Username: " + fields[0] + ", Registered: " + fields[1]);
+					}
 				}
 			} else {
 				System.out.println("   No users registered");
 			}
+		} else {
+			System.out.println("   ERROR: " + usersResult);
 		}
 		
 		// Login history for each user
@@ -191,23 +196,29 @@ public class Database {
 		String loginSQL = "SELECT username, login_time, logout_time FROM login_history ORDER BY username, login_time DESC";
 		String loginResult = executeSQL(loginSQL);
 		if (loginResult.startsWith("SUCCESS")) {
-			String[] parts = loginResult.split("\\|");
-			if (parts.length > 1) {
+			String[] rows = loginResult.split("\\|");
+			if (rows.length > 1) {
 				String currentUser = "";
-				for (int i = 1; i < parts.length; i++) {
-					String[] fields = parts[i].replace("(", "").replace(")", "").replace("'", "").split(", ");
+				for (int i = 1; i < rows.length; i++) {
+					String[] fields = rows[i].split(",");
 					if (fields.length >= 3) {
-						if (!fields[0].equals(currentUser)) {
-							currentUser = fields[0];
+						String username = fields[0];
+						String loginTime = fields[1];
+						String logoutTime = fields[2].isEmpty() ? "Still logged in" : fields[2];
+						
+						if (!username.equals(currentUser)) {
+							currentUser = username;
 							System.out.println("\n   User: " + currentUser);
 						}
-						System.out.println("      Login:  " + fields[1]);
-						System.out.println("      Logout: " + (fields[2].equals("None") ? "Still logged in" : fields[2]));
+						System.out.println("      Login:  " + loginTime);
+						System.out.println("      Logout: " + logoutTime);
 					}
 				}
 			} else {
 				System.out.println("   No login history");
 			}
+		} else {
+			System.out.println("   ERROR: " + loginResult);
 		}
 		
 		// File uploads for each user
@@ -216,29 +227,36 @@ public class Database {
 		String filesSQL = "SELECT username, filename, upload_time, game_channel FROM file_tracking ORDER BY username, upload_time DESC";
 		String filesResult = executeSQL(filesSQL);
 		if (filesResult.startsWith("SUCCESS")) {
-			String[] parts = filesResult.split("\\|");
-			if (parts.length > 1) {
+			String[] rows = filesResult.split("\\|");
+			if (rows.length > 1) {
 				String currentUser = "";
-				for (int i = 1; i < parts.length; i++) {
-					String[] fields = parts[i].replace("(", "").replace(")", "").replace("'", "").split(", ");
+				for (int i = 1; i < rows.length; i++) {
+					String[] fields = rows[i].split(",");
 					if (fields.length >= 4) {
-						if (!fields[0].equals(currentUser)) {
-							currentUser = fields[0];
+						String username = fields[0];
+						String filename = fields[1];
+						String uploadTime = fields[2];
+						String gameChannel = fields[3];
+						
+						if (!username.equals(currentUser)) {
+							currentUser = username;
 							System.out.println("\n   User: " + currentUser);
 						}
-						System.out.println("      File: " + fields[1]);
-						System.out.println("      Time: " + fields[2]);
-						System.out.println("      Game: " + fields[3]);
+						System.out.println("      File: " + filename);
+						System.out.println("      Time: " + uploadTime);
+						System.out.println("      Game: " + gameChannel);
 						System.out.println();
 					}
 				}
 			} else {
 				System.out.println("   No files uploaded");
 			}
+		} else {
+			System.out.println("   ERROR: " + filesResult);
 		}
 		
-	System.out.println(repeat("=", 80));
-}
+		System.out.println(repeat("=", 80));
+	}
 
 private String repeat(String str, int times) {
 	StringBuilder sb = new StringBuilder();

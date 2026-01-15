@@ -11,6 +11,8 @@ the methods below.
 import socket
 import sys
 import threading
+import sqlite3
+from typing import Tuple
 
 
 SERVER_NAME = "STOMP_PYTHON_SQL_SERVER"  # DO NOT CHANGE!
@@ -30,18 +32,81 @@ def recv_null_terminated(sock: socket.socket) -> str:
 
 
 def init_database():
-    pass
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Create your tables here
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS login_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL REFERENCES users(username),
+            login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            logout_time TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS file_tracking (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL REFERENCES users(username),
+            filename TEXT NOT NULL,
+            upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            game_channel TEXT
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
 
 def execute_sql_command(sql_command: str) -> str:
-    return "done"
+    """Execute INSERT, UPDATE, DELETE commands"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(sql_command)
+        conn.commit()
+        rows_affected = cursor.rowcount
+        conn.close()
+        return f"SUCCESS: {rows_affected} rows affected"
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 
 
 def execute_sql_query(sql_query: str) -> str:
-    return "done"
+    """Execute SELECT queries and return results"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(sql_query)
+        results = cursor.fetchall()
+        conn.close()
+        
+        # Format results as: SUCCESS|field1,field2,field3|field1,field2,field3...
+        # Each row's fields are comma-separated, rows are pipe-separated
+        if results:
+            formatted_rows: list[str] = []
+            for row in results:
+                # Convert each field to string, replace None with empty string
+                fields = [str(field) if field is not None else "" for field in row]
+                # Join fields with comma
+                formatted_rows.append(",".join(fields))
+            result_str = "SUCCESS|" + "|".join(formatted_rows)
+            return result_str
+        else:
+            return "SUCCESS|"
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 
-
-def handle_client(client_socket: socket.socket, addr):
+def handle_client(client_socket: socket.socket, addr: Tuple[str, int]):
     print(f"[{SERVER_NAME}] Client connected from {addr}")
 
     try:
@@ -53,7 +118,15 @@ def handle_client(client_socket: socket.socket, addr):
             print(f"[{SERVER_NAME}] Received:")
             print(message)
 
-            client_socket.sendall(b"done\0")
+            # Determine if it's a query (SELECT) or command (INSERT/UPDATE/DELETE)
+            sql_upper = message.strip().upper()
+            if sql_upper.startswith('SELECT'):
+                response = execute_sql_query(message)
+            else:
+                response = execute_sql_command(message)
+            
+            print(f"[{SERVER_NAME}] Response: {response}")
+            client_socket.sendall((response + "\0").encode('utf-8'))
 
     except Exception as e:
         print(f"[{SERVER_NAME}] Error handling client {addr}: {e}")
@@ -65,7 +138,7 @@ def handle_client(client_socket: socket.socket, addr):
         print(f"[{SERVER_NAME}] Client {addr} disconnected")
 
 
-def start_server(host="127.0.0.1", port=7778):
+def start_server(host: str = "127.0.0.1", port: int = 7778):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -101,5 +174,10 @@ if __name__ == "__main__":
             port = int(raw_port)
         except ValueError:
             print(f"Invalid port '{raw_port}', falling back to default {port}")
-
+    
+    # Initialize database tables before starting server
+    print(f"[{SERVER_NAME}] Initializing database...")
+    init_database()
+    print(f"[{SERVER_NAME}] Database initialized")
+    
     start_server(port=port)
