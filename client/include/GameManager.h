@@ -14,8 +14,8 @@ private:
 public:
     GameManager() : events() {}
 
-    void addEvent(const Event& event, std::string user) {
-        events[event.get_name()][user].push_back(event);
+    void addEvent(const Event& event, std::string user, std::string gameName) {
+        events[gameName][user].push_back(event);
     }
 
     std::string generateSummary(std::string gameName, std::string user) {
