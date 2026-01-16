@@ -2,10 +2,10 @@ package bgu.spl.net.impl.stomp;
 
 import bgu.spl.net.impl.data.LoginStatus;
 import bgu.spl.net.impl.data.Database;
-// import bgu.spl.net.srv.ConnectionsImpl; removed unused
 import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.srv.Connections;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 public class StompMessagingProtocolImpl implements StompMessagingProtocol<String> {
@@ -14,13 +14,13 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private Connections<String> connections;
     private boolean shouldTerminate = false;
     private boolean isLoggedIn = false;
-    // private String username;
-    private Map<String, String> subscriptionIdToChannel = new HashMap<>(); // subId -> channel
+    private Map<Integer, String> subscriptionIdToChannel;
 
     @Override
     public void start(int connectionId, Connections<String> connections) {
         this.connectionId = connectionId;
         this.connections = connections;
+        subscriptionIdToChannel = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -28,166 +28,187 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         String[] lines = message.split("\n");
         if (lines.length == 0) return;
 
+        // Parse command
         String command = lines[0].trim();
-        Map<String, String> headers = parseHeaders(lines);
-        String body = extractBody(lines);
 
-        switch (command) {
-            case "CONNECT":
-                handleConnect(headers);
-                break;
-            case "DISCONNECT":
-                handleDisconnect(headers);
-                break;
-            case "SEND":
-                handleSend(headers, body);
-                break;
-            case "SUBSCRIBE":
-                handleSubscribe(headers);
-                break;
-            case "UNSUBSCRIBE":
-                handleUnsubscribe(headers);
-                break;
-        }
-    }
-
-    private Map<String, String> parseHeaders(String[] lines) {
-        Map<String, String> headers = new HashMap<>();
+        // Parse headers
+        Map<String, String> parsedMessage = new HashMap<>();
         int i = 1;
         while (i < lines.length && !lines[i].trim().isEmpty()) {
             String[] pair = lines[i].split(":", 2);
             if (pair.length == 2) {
-                headers.put(pair[0].trim(), pair[1].trim());
+                parsedMessage.put(pair[0].trim(), pair[1].trim());
             }
             i++;
         }
-        return headers;
-    }
 
-    private String extractBody(String[] lines) {
-        int i = 1;
-        // Skip headers
-        while (i < lines.length && !lines[i].trim().isEmpty()) {
-            i++;
-        }
-        
         // Skip empty line separator
         if (i < lines.length && lines[i].trim().isEmpty()) {
-             i++;
+            i++;
         }
 
+        // Parse body
         StringBuilder bodyBuilder = new StringBuilder();
         while (i < lines.length) {
             bodyBuilder.append(lines[i]).append("\n");
             i++;
         }
-        
-        if (bodyBuilder.length() > 0) {
+
+        if(bodyBuilder.length() > 0) {
             bodyBuilder.setLength(bodyBuilder.length() - 1); // remove last newline
-            return bodyBuilder.toString();
         }
-        return "";
+        
+        parsedMessage.put("body", bodyBuilder.toString());
+        
+        switch (command) {
+            case "CONNECT":
+                Connect(parsedMessage);
+                break;
+            case "DISCONNECT":
+                Disconnect(parsedMessage);
+                break;
+            case "SEND":
+                Send(parsedMessage);
+                break;
+            case "SUBSCRIBE":
+                Subscribe(parsedMessage);
+                break;
+            case "UNSUBSCRIBE":
+                Unsubscribe(parsedMessage);
+                break;
+        }
     }
 
-    private void handleConnect(Map<String, String> headers) {
+    private void Connect(Map<String, String> headers) {
         String login = headers.get("login");
         String passcode = headers.get("passcode");
         String acceptVersion = headers.get("accept-version");
         
-        // TODO: check accept-version?
+        // Validate STOMP version
+        if(acceptVersion == null || !acceptVersion.contains("1.2")) {
+            connections.send(connectionId, "ERROR\nmessage:Unsupported STOMP version\n\n");
+            shouldTerminate = true;
+            connections.disconnect(connectionId);
+            return;
+        }
         
-        System.out.println("Login attempt: " + login + ", pass: " + passcode);
+        System.out.println("Login attempt: " + login + ", pass: " + passcode); // debug
         LoginStatus status = Database.getInstance().login(connectionId, login, passcode);
         
         if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY || 
             status == LoginStatus.ADDED_NEW_USER) {
-            
             isLoggedIn = true;
-            // username = login;
             connections.send(connectionId, "CONNECTED\nversion:1.2\n\n");
-            System.out.println("Login successful for: " + login);
+            System.out.println("Login successful for: " + login); // debug
+        } else if (status == LoginStatus.CLIENT_ALREADY_CONNECTED) {
+            // Send appropriate error and don't disconnect
+            connections.send(connectionId, "ERROR\nmessage:Client already connected\n\n");
+            System.out.println("Login failed: Client already connected"); // debug
         } else {
-            String errorMsg = "Login failed";
-            if (status == LoginStatus.WRONG_PASSWORD) errorMsg = "Wrong password";
-            else if (status == LoginStatus.ALREADY_LOGGED_IN) errorMsg = "User already logged in";
-            else if (status == LoginStatus.CLIENT_ALREADY_CONNECTED) errorMsg = "Client already connected";
-            
-            System.out.println("Login failed: " + errorMsg);
-            connections.send(connectionId, "ERROR\nmessage:" + errorMsg + "\n\n");
-            shouldTerminate = true; 
+            // Send appropriate error and disconnect
+            if (status == LoginStatus.WRONG_PASSWORD){
+                connections.send(connectionId, "ERROR\nmessage:Wrong password\n\n");
+                System.out.println("Login failed: Wrong password"); // debug
+            }
+            else if (status == LoginStatus.ALREADY_LOGGED_IN){
+                connections.send(connectionId, "ERROR\nmessage:User already logged in\n\n");
+                System.out.println("Login failed: User already logged in"); // debug
+            }
+            shouldTerminate = true;
             connections.disconnect(connectionId);
         }
     }
 
-    private void handleDisconnect(Map<String, String> headers) {
+    private void Disconnect(Map<String, String> headers) {
         String receipt = headers.get("receipt");
-        sendReceipt(receipt);
+        if(receipt == null) {
+            sendError("Missing receipt header in DISCONNECT");
+            return;
+        }
+        
+        // Send receipt before terminating
+        connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+        
         Database.getInstance().logout(connectionId);
         shouldTerminate = true;
         connections.disconnect(connectionId);
     }
 
-    private void handleSend(Map<String, String> headers, String body) {
+    private void Send(Map<String, String> parsedMessage) {
         if (!isLoggedIn) {
             sendError("Not logged in");
             return;
         }
-        String destination = headers.get("destination");
+
+        String destination = parsedMessage.get("destination");
         if (destination == null) {
             sendError("No destination header");
             return;
         }
         
-        connections.send(destination, body);
+        // Check if client is subscribed to the channel
+        if (!subscriptionIdToChannel.containsValue(destination)) {
+            sendError("Not subscribed to destination: " + destination);
+            return;
+        }
+        connections.send(destination, parsedMessage.get("body"));
         
-        String receipt = headers.get("receipt");
-        sendReceipt(receipt);
+        // Send receipt if requested
+        String receipt = parsedMessage.get("receipt");
+        if (receipt != null) {
+            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+        }
     }
 
-    private void handleSubscribe(Map<String, String> headers) {
+    private void Subscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
             sendError("Not logged in");
             return;
         }
         String destination = headers.get("destination");
         String id = headers.get("id");
-        String receipt = headers.get("receipt");
         
-        if (destination == null || id == null) {
-            sendError("Missing headers");
+        if (destination == null) {
+            sendError("Missing destination header");
             return;
         }
         
-        subscriptionIdToChannel.put(id, destination);
-        connections.subscribe(destination, connectionId, Integer.parseInt(id));
-        
-        sendReceipt(receipt);
+        try {
+            int subscriptionId = Integer.parseInt(id);
+            subscriptionIdToChannel.put(subscriptionId, destination);
+            connections.subscribe(destination, connectionId, subscriptionId);
+            
+            // Send receipt if requested
+            String receipt = headers.get("receipt");
+            if (receipt != null) {
+                connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+            }
+        } catch (NumberFormatException | NullPointerException e) {
+            sendError("Invalid or missing subscription id");
+        }
     }
 
-    private void handleUnsubscribe(Map<String, String> headers) {
+    private void Unsubscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
             sendError("Not logged in");
             return;
         }
         String id = headers.get("id");
-        String receipt = headers.get("receipt");
-
-        if (id == null) {
-            sendError("Missing id header");
-            return;
-        }
         
-        String channel = subscriptionIdToChannel.remove(id);
-        if (channel != null) {
-            connections.unsubscribe(channel, connectionId);
-        }
-        
-        sendReceipt(receipt);
-    }
-    
-    private void sendReceipt(String receiptId) {
-        if (receiptId != null) {
-            connections.send(connectionId, "RECEIPT\nreceipt-id:" + receiptId + "\n\n");
+        try {
+            int subscriptionId = Integer.parseInt(id);
+            String channel = subscriptionIdToChannel.remove(subscriptionId);
+            if (channel != null) {
+                connections.unsubscribe(channel, connectionId);
+            }
+            
+            // Send receipt if requested
+            String receipt = headers.get("receipt");
+            if (receipt != null) {
+                connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+            }
+        } catch (NumberFormatException | NullPointerException e) {
+            sendError("Invalid or missing subscription id");
         }
     }
     
