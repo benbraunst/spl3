@@ -12,7 +12,7 @@ StompProtocol::StompProtocol(ConnectionHandler* handler) :
 {}
 
 bool StompProtocol::shouldTerminate() {
-    return !handler->isConnected();
+    return !handler->isConnected;
 }
 
 vector<string> split(const string& str, char delimiter) {
@@ -175,18 +175,18 @@ void StompProtocol::processKeyboardCommand(string line) {
             frame += "time:" + to_string(ev.get_time()) + "\n";
             
             frame += "general game updates:\n";
-            for (auto const& [key, val] : ev.get_game_updates()) {
-                frame += "\t" + key + ":" + val + "\n";
+            for (auto const& pair : ev.get_game_updates()) {
+                frame += "\t" + pair.first + ":" + pair.second + "\n";
             }
             
             frame += "team a updates:\n";
-             for (auto const& [key, val] : ev.get_team_a_updates()) {
-                frame += "\t" + key + ":" + val + "\n";
+             for (auto const& pair : ev.get_team_a_updates()) {
+                frame += "\t" + pair.first + ":" + pair.second + "\n";
             }
              
             frame += "team b updates:\n";
-             for (auto const& [key, val] : ev.get_team_b_updates()) {
-                frame += "\t" + key + ":" + val + "\n";
+             for (auto const& pair : ev.get_team_b_updates()) {
+                frame += "\t" + pair.first + ":" + pair.second + "\n";
             }
             
             frame += "description:\n" + ev.get_discription() + "\n";

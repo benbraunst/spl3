@@ -13,13 +13,14 @@ private:
 	boost::asio::io_service io_service_;   // Provides core I/O functionality
 	tcp::socket socket_;
 
+
+
 public:
-	ConnectionHandler(std::string host, short port);
+    ConnectionHandler(std::string host, short port);
+    virtual ~ConnectionHandler();
+    bool connect();
+    bool isConnected = false; 
 
-	virtual ~ConnectionHandler();
-
-	// Connect to the remote machine
-	bool connect();
 
 	// Read a fixed number of bytes from the server - blocking.
 	// Returns false in case the connection is closed before bytesToRead bytes can be read.
@@ -45,7 +46,8 @@ public:
 	// Returns false in case connection is closed before all the data is sent.
 	bool sendFrameAscii(const std::string &frame, char delimiter);
 
-	// Close down the connection properly.
-	void close();
+    // Close down the connection properly.
+    void close();
+
 
 }; //class ConnectionHandler

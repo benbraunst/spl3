@@ -29,6 +29,7 @@ bool ConnectionHandler::connect() {
 		std::cerr << "Connection failed (Error: " << e.what() << ')' << std::endl;
 		return false;
 	}
+    isConnected = true;
 	return true;
 }
 
@@ -43,6 +44,7 @@ bool ConnectionHandler::getBytes(char bytes[], unsigned int bytesToRead) {
 			throw boost::system::system_error(error);
 	} catch (std::exception &e) {
 		std::cerr << "recv failed (Error: " << e.what() << ')' << std::endl;
+        isConnected = false;
 		return false;
 	}
 	return true;
@@ -59,6 +61,7 @@ bool ConnectionHandler::sendBytes(const char bytes[], int bytesToWrite) {
 			throw boost::system::system_error(error);
 	} catch (std::exception &e) {
 		std::cerr << "recv failed (Error: " << e.what() << ')' << std::endl;
+        isConnected = false;
 		return false;
 	}
 	return true;
@@ -87,6 +90,7 @@ bool ConnectionHandler::getFrameAscii(std::string &frame, char delimiter) {
 		} while (delimiter != ch);
 	} catch (std::exception &e) {
 		std::cerr << "recv failed2 (Error: " << e.what() << ')' << std::endl;
+        isConnected = false;
 		return false;
 	}
 	return true;
@@ -100,6 +104,7 @@ bool ConnectionHandler::sendFrameAscii(const std::string &frame, char delimiter)
 
 // Close down the connection properly.
 void ConnectionHandler::close() {
+    isConnected = false;
 	try {
 		socket_.close();
 	} catch (...) {
