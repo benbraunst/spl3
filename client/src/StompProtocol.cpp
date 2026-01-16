@@ -279,14 +279,18 @@ void StompProtocol::processServerFrame(string frame) {
         istringstream bodyS(body);
         string l;
         while(getline(bodyS, l)) {
+            if (!l.empty() && l.back() == '\r') l.pop_back();
             if (l.find("user:") == 0) {
                  user = l.substr(5);
                  break;
             }
         }
         
-        gameManager.addEvent(ev, user);
-        // Don't print "Received message" unless asked.
+        gameManager.addEvent(ev, user, gameName);
+        cout << "Received key press: " << ev.get_name() << endl; // Debug print or requirement?
+        // Assignment often asks to just store updates, but for verification users want to see it.
+        // Let's print the whole event or just a summary.
+        cout << "Received event: " << ev.get_name() << " in game: " << gameName << endl;
     }
     else if (command == "RECEIPT") {
         if (headers.count("receipt-id")) {
