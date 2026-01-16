@@ -96,6 +96,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         
         // TODO: check accept-version?
         
+        System.out.println("Login attempt: " + login + ", pass: " + passcode);
         LoginStatus status = Database.getInstance().login(connectionId, login, passcode);
         
         if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY || 
@@ -104,12 +105,14 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             isLoggedIn = true;
             // username = login;
             connections.send(connectionId, "CONNECTED\nversion:1.2\n\n");
+            System.out.println("Login successful for: " + login);
         } else {
             String errorMsg = "Login failed";
             if (status == LoginStatus.WRONG_PASSWORD) errorMsg = "Wrong password";
             else if (status == LoginStatus.ALREADY_LOGGED_IN) errorMsg = "User already logged in";
             else if (status == LoginStatus.CLIENT_ALREADY_CONNECTED) errorMsg = "Client already connected";
             
+            System.out.println("Login failed: " + errorMsg);
             connections.send(connectionId, "ERROR\nmessage:" + errorMsg + "\n\n");
             shouldTerminate = true; 
             connections.disconnect(connectionId);
