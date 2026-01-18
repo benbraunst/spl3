@@ -141,27 +141,21 @@ void StompProtocol::processKeyboardCommand(string line) {
         if (!isConnected) { cout << "Not connected" << endl; return; }
         string file = args[1];
         names_and_events parsed = parseEventsFile(file);
-        // parsed.team_a_name, team_b_name, events...
         
-        // Allow spaces in game name? The assignment usually assumes single word or handled?
-        // "join {game_name}" -> one arg.
-        // parseEventsFile returns parsed objects.
-        
-        // Check "team a_team b" topic or assumed?
-        // Usually, the topic is not part of the file, but implicit?
-        // Wait, "report {file}" -> where do we send it?
-        // "Send SEND frames for each event."
-        // To which destination?
-        // "note that the topic name is not passed as an argument... The client should verify that it is subscribed to the channel..." 
-        // "The channel name is the concatenation of team a name and team b name separated by underscore"
-        // Example: "Germany_Spain"
+        // Extract filename from path (remove directory path)
+        string filename = file;
+        size_t lastSlash = file.find_last_of("/\\");
+        if (lastSlash != string::npos) {
+            filename = file.substr(lastSlash + 1);
+        }
         
         string gameName = parsed.team_a_name + "_" + parsed.team_b_name;
         if (subscriptions.find(gameName) == subscriptions.end()) {
             cout << "Not subscribed to " << gameName << endl;
-            return; // Or continue? Best to return.
+            return;
         }
         
+        bool firstEvent = true;  // Track only on first event
         for (const auto& ev : parsed.events) {
             string frame = "SEND\n";
             frame += "destination:/" + gameName + "\n";
@@ -173,6 +167,10 @@ void StompProtocol::processKeyboardCommand(string line) {
             frame += "team b:" + parsed.team_b_name + "\n";
             frame += "event name:" + ev.get_name() + "\n";
             frame += "time:" + to_string(ev.get_time()) + "\n";
+            if (firstEvent) {
+                frame += "file name:" + filename + "\n";  // Send only filename, not full path
+                firstEvent = false;
+            }
             
             frame += "general game updates:\n";
             for (auto const& pair : ev.get_game_updates()) {
