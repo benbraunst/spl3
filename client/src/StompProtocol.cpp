@@ -159,6 +159,10 @@ void StompProtocol::processKeyboardCommand(string line) {
         for (const auto& ev : parsed.events) {
             string frame = "SEND\n";
             frame += "destination:/" + gameName + "\n";
+            if (firstEvent) {
+                frame += "file name:" + filename + "\n";
+                firstEvent = false;
+            }
             frame += "\n";
             
             // Serialize Event to Body
@@ -167,10 +171,7 @@ void StompProtocol::processKeyboardCommand(string line) {
             frame += "team b:" + parsed.team_b_name + "\n";
             frame += "event name:" + ev.get_name() + "\n";
             frame += "time:" + to_string(ev.get_time()) + "\n";
-            if (firstEvent) {
-                frame += "file name:" + filename + "\n";  // Send only filename, not full path
-                firstEvent = false;
-            }
+
             
             frame += "general game updates:\n";
             for (auto const& pair : ev.get_game_updates()) {

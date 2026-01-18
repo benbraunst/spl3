@@ -150,6 +150,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
         String destination = parsedMessage.get("destination");
         String body = parsedMessage.get("body");
+        String fileName = parsedMessage.get("file name");
         
         System.out.println("[SEND] Client " + connectionId + " sending to: " + destination);
         System.out.println("[SEND] Body preview: " + (body != null && body.length() > 50 ? body.substring(0, 50) + "..." : body));
@@ -171,30 +172,16 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         connections.send(destination, body);
         
         // Track file upload if message contains file information
-        trackFileUpload(body, destination);
+        if(fileName != null) {
+            Database.getInstance().trackFileUpload(username, fileName, destination);
+                System.out.println("[SEND] Tracked file upload: " + fileName + " by " + username + " to " + destination);
+        }
         
         // Send receipt if requested
         String receipt = parsedMessage.get("receipt");
         if (receipt != null) {
             connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
             System.out.println("[SEND] Sent receipt: " + receipt);
-        }
-    }
-    
-    private void trackFileUpload(String body, String destination) {
-        if (body != null && body.contains("file name:") && username != null) {
-            // Extract filename from body (format: "user: X\nteam: Y\nfile name: Z")
-            String[] lines = body.split("\n");
-            for (String line : lines) {
-                if (line.startsWith("file name:")) {
-                    String filename = line.substring("file name:".length()).trim();
-                    if (!filename.isEmpty()) {
-                        Database.getInstance().trackFileUpload(username, filename, destination);
-                        System.out.println("[SEND] Tracked file upload: " + filename + " by " + username + " to " + destination);
-                    }
-                    break;
-                }
-            }
         }
     }
 
