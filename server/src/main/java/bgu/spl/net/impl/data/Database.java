@@ -18,6 +18,30 @@ public class Database {
 		// SQL server connection details
 		this.sqlHost = "127.0.0.1";
 		this.sqlPort = 7778;
+		
+		// Clean up any incomplete login sessions from previous server run
+		cleanupIncompleteSessions();
+	}
+	
+	/**
+	 * Mark all login sessions without logout_time as logged out
+	 * This handles cases where the server crashed or was restarted
+	 */
+	private void cleanupIncompleteSessions() {
+		System.out.println("[Database] Cleaning up incomplete login sessions from previous server run...");
+		String cleanupSQL = "UPDATE login_history SET logout_time=datetime('now') WHERE logout_time IS NULL";
+		String result = executeSQL(cleanupSQL);
+		
+		if (result.startsWith("SUCCESS")) {
+			// Parse number of rows affected
+			String[] parts = result.split(":");
+			if (parts.length > 1) {
+				String rowsAffected = parts[1].trim().split(" ")[0];
+				System.out.println("[Database] Cleaned up " + rowsAffected + " incomplete login session(s)");
+			}
+		} else {
+			System.err.println("[Database] WARNING: Failed to cleanup incomplete sessions: " + result);
+		}
 	}
 
 	public static Database getInstance() {
@@ -30,6 +54,7 @@ public class Database {
 	 * @return Result string from SQL server
 	 */
 	private String executeSQL(String sql) {
+		System.out.println("[Database] Executing SQL: " + sql);
 		try (Socket socket = new Socket(sqlHost, sqlPort);
 			 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
 			 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
@@ -45,10 +70,12 @@ public class Database {
 				response.append((char) ch);
 			}
 			
-			return response.toString();
+			String result = response.toString();
+			System.out.println("[Database] SQL Response: " + (result.length() > 100 ? result.substring(0, 100) + "..." : result));
+			return result;
 			
 		} catch (Exception e) {
-			System.err.println("SQL Error: " + e.getMessage());
+			System.err.println("[Database] SQL Error: " + e.getMessage());
 			return "ERROR:" + e.getMessage();
 		}
 	}
@@ -67,27 +94,90 @@ public class Database {
 	}
 
 	public LoginStatus login(int connectionId, String username, String password) {
+		System.out.println("[Database] Login attempt - ConnectionID: " + connectionId + ", Username: " + username);
+		
 		if (connectionsIdMap.containsKey(connectionId)) {
+			System.out.println("[Database] Login failed: CLIENT_ALREADY_CONNECTED");
 			return LoginStatus.CLIENT_ALREADY_CONNECTED;
 		}
-		if (addNewUserCase(connectionId, username, password)) {
-			// Log new user registration in SQL
-			String sql = String.format(
+		
+		// Check if user exists in SQL database
+		String checkUserSQL = String.format(
+			"SELECT username, password FROM users WHERE username='%s'",
+			escapeSql(username)
+		);
+		String result = executeSQL(checkUserSQL);
+		
+		if (result.startsWith("ERROR")) {
+			System.err.println("[Database] CRITICAL: SQL error checking user: " + result);
+		}
+		
+		String[] parts = result.split("\\|");
+		boolean userExistsInSQL = parts.length > 1;
+		
+		if (!userExistsInSQL) {
+			// New user - register in SQL
+			System.out.println("[Database] New user - registering in SQL: " + username);
+			String insertSQL = String.format(
 				"INSERT INTO users (username, password, registration_date) VALUES ('%s', '%s', datetime('now'))",
 				escapeSql(username), escapeSql(password)
 			);
-			executeSQL(sql);
+			String insertResult = executeSQL(insertSQL);
+			
+			if (insertResult.startsWith("ERROR")) {
+				System.err.println("[Database] CRITICAL: Failed to register user in SQL: " + insertResult);
+			}
+			
+			System.out.println("[Database] New user persisted to SQL database: " + username);
+			
+			// Add to in-memory map
+			User user = new User(connectionId, username, password);
+			user.login();
+			addUser(user);
 			
 			// Log login
 			logLogin(username);
+			System.out.println("[Database] Login successful: ADDED_NEW_USER");
 			return LoginStatus.ADDED_NEW_USER;
 		} else {
-			LoginStatus status = userExistsCase(connectionId, username, password);
-			if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY) {
-				// Log successful login in SQL
-				logLogin(username);
+			// User exists in SQL - verify password
+			String[] userData = parts[1].split(",");
+			String storedPassword = userData[1];
+			
+			if (!storedPassword.equals(password)) {
+				System.out.println("[Database] Login failed: WRONG_PASSWORD");
+				return LoginStatus.WRONG_PASSWORD;
 			}
-			return status;
+			
+			// Check if user is already logged in via SQL
+			String checkLoginSQL = String.format(
+				"SELECT username FROM login_history WHERE username='%s' AND logout_time IS NULL",
+				escapeSql(username)
+			);
+			String loginCheckResult = executeSQL(checkLoginSQL);
+			String[] loginParts = loginCheckResult.split("\\|");
+			
+			if (loginParts.length > 1) {
+				System.out.println("[Database] Login failed: ALREADY_LOGGED_IN");
+				return LoginStatus.ALREADY_LOGGED_IN;
+			}
+			
+			// Login successful - update in-memory map
+			User user = userMap.get(username);
+			if (user == null) {
+				// User exists in SQL but not in memory (server restart)
+				user = new User(connectionId, username, password);
+				userMap.put(username, user);
+				System.out.println("[Database] Loaded user from SQL into memory");
+			}
+			user.login();
+			user.setConnectionId(connectionId);
+			connectionsIdMap.put(connectionId, user);
+			
+			// Log login
+			logLogin(username);
+			System.out.println("[Database] Login successful: LOGGED_IN_SUCCESSFULLY");
+			return LoginStatus.LOGGED_IN_SUCCESSFULLY;
 		}
 	}
 
@@ -99,32 +189,85 @@ public class Database {
 		executeSQL(sql);
 	}
 
+	// Deprecated - logic moved to login() method
+	@Deprecated
 	private LoginStatus userExistsCase(int connectionId, String username, String password) {
-		User user = userMap.get(username);
-		synchronized (user) {
-			if (user.isLoggedIn()) {
-				return LoginStatus.ALREADY_LOGGED_IN;
-			} else if (!user.password.equals(password)) {
-				return LoginStatus.WRONG_PASSWORD;
-			} else {
-				user.login();
-				user.setConnectionId(connectionId);
-				connectionsIdMap.put(connectionId, user);
-				return LoginStatus.LOGGED_IN_SUCCESSFULLY;
-			}
+		// Check SQL for user data and login status
+		String checkUserSQL = String.format(
+			"SELECT username, password FROM users WHERE username='%s'",
+			escapeSql(username)
+		);
+		String result = executeSQL(checkUserSQL);
+		
+		if (result.startsWith("ERROR")) {
+			System.err.println("[Database] CRITICAL: SQL error checking user in userExistsCase: " + result);
+			throw new RuntimeException("Database error during login verification");
 		}
+		
+		String[] parts = result.split("\\|");
+		if (parts.length <= 1) {
+			// User not found in SQL - this is a critical logic error
+			System.err.println("[Database] CRITICAL ERROR: User '" + username + "' not found in SQL database despite addNewUserCase returning false!");
+			System.err.println("[Database] This indicates a race condition or database inconsistency.");
+			throw new RuntimeException("Database inconsistency detected during login");
+		}
+		
+		// Parse user data from SQL
+		String[] userData = parts[1].split(",");
+		String storedPassword = userData[1];
+		
+		// Check password
+		if (!storedPassword.equals(password)) {
+			System.out.println("[Database] Wrong password for user: " + username);
+			return LoginStatus.WRONG_PASSWORD;
+		}
+		
+		// Check if user is already logged in via SQL
+		String checkLoginSQL = String.format(
+			"SELECT username FROM login_history WHERE username='%s' AND logout_time IS NULL",
+			escapeSql(username)
+		);
+		String loginCheckResult = executeSQL(checkLoginSQL);
+		String[] loginParts = loginCheckResult.split("\\|");
+		boolean alreadyLoggedIn = loginParts.length > 1;
+		
+		if (alreadyLoggedIn) {
+			System.out.println("[Database] User already logged in: " + username);
+			return LoginStatus.ALREADY_LOGGED_IN;
+		}
+		
+		// Login successful - update in-memory map
+		User user = userMap.get(username);
+		if (user == null) {
+			// Load from SQL into memory
+			user = new User(connectionId, username, password);
+			userMap.put(username, user);
+			System.out.println("[Database] Loaded user from SQL into memory");
+		}
+		user.login();
+		user.setConnectionId(connectionId);
+		connectionsIdMap.put(connectionId, user);
+		
+		return LoginStatus.LOGGED_IN_SUCCESSFULLY;
 	}
 
+	@Deprecated
 	private boolean addNewUserCase(int connectionId, String username, String password) {
-		if (!userMap.containsKey(username)) {
-			synchronized (userMap) {
-				if (!userMap.containsKey(username)) {
-					User user = new User(connectionId, username, password);
-					user.login();
-					addUser(user);
-					return true;
-				}
-			}
+		// Check SQL to see if user exists
+		String checkUserSQL = String.format(
+			"SELECT username FROM users WHERE username='%s'",
+			escapeSql(username)
+		);
+		String result = executeSQL(checkUserSQL);
+		String[] parts = result.split("\\|");
+		boolean userExistsInSQL = parts.length > 1;
+		
+		if (!userExistsInSQL) {
+			// User doesn't exist in SQL - add to both SQL and memory
+			User user = new User(connectionId, username, password);
+			user.login();
+			addUser(user);
+			return true;
 		}
 		return false;
 	}
@@ -132,6 +275,7 @@ public class Database {
 	public void logout(int connectionsId) {
 		User user = connectionsIdMap.get(connectionsId);
 		if (user != null) {
+			System.out.println("[Database] Logging out user: " + user.name + " (ConnectionID: " + connectionsId + ")");
 			// Log logout in SQL
 			String sql = String.format(
 				"UPDATE login_history SET logout_time=datetime('now') " +
@@ -143,6 +287,9 @@ public class Database {
 			
 			user.logout();
 			connectionsIdMap.remove(connectionsId);
+			System.out.println("[Database] User " + user.name + " logged out successfully");
+		} else {
+			System.out.println("[Database] WARNING: Logout attempted for unknown connectionId: " + connectionsId);
 		}
 	}
 
@@ -153,12 +300,18 @@ public class Database {
 	 * @param gameChannel Game channel the file was reported to
 	 */
 	public void trackFileUpload(String username, String filename, String gameChannel) {
+		System.out.println("[Database] Tracking file upload - User: " + username + ", File: " + filename + ", Channel: " + gameChannel);
 		String sql = String.format(
 			"INSERT INTO file_tracking (username, filename, upload_time, game_channel) " +
 			"VALUES ('%s', '%s', datetime('now'), '%s')",
 			escapeSql(username), escapeSql(filename), escapeSql(gameChannel)
 		);
-		executeSQL(sql);
+		String result = executeSQL(sql);
+		if (result.startsWith("SUCCESS")) {
+			System.out.println("[Database] File upload tracked successfully");
+		} else {
+			System.out.println("[Database] ERROR: Failed to track file upload - " + result);
+		}
 	}
 
 	/**
