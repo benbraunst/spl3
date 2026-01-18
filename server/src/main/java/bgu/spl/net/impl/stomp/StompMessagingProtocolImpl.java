@@ -14,6 +14,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private Connections<String> connections;
     private boolean shouldTerminate = false;
     private boolean isLoggedIn = false;
+    private String username = null;
     private Map<Integer, String> subscriptionIdToChannel;
 
     @Override
@@ -98,6 +99,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY || 
             status == LoginStatus.ADDED_NEW_USER) {
             isLoggedIn = true;
+            username = login;  // Store username for this connection
             connections.send(connectionId, "CONNECTED\nversion:1.2\n\n");
             System.out.println("Login successful for: " + login); // debug
         } else if (status == LoginStatus.CLIENT_ALREADY_CONNECTED) {
@@ -120,55 +122,95 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     }
 
     private void Disconnect(Map<String, String> headers) {
+        System.out.println("[DISCONNECT] Client " + connectionId + " disconnecting");
+        
         String receipt = headers.get("receipt");
         if(receipt == null) {
+            System.out.println("[DISCONNECT] ERROR: Missing receipt header");
             sendError("Missing receipt header in DISCONNECT");
             return;
         }
         
         // Send receipt before terminating
         connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+        System.out.println("[DISCONNECT] Sent receipt: " + receipt);
         
         Database.getInstance().logout(connectionId);
         shouldTerminate = true;
         connections.disconnect(connectionId);
+        System.out.println("[DISCONNECT] Client " + connectionId + " disconnected successfully");
     }
 
     private void Send(Map<String, String> parsedMessage) {
         if (!isLoggedIn) {
+            System.out.println("[SEND] ERROR: Client " + connectionId + " not logged in");
             sendError("Not logged in");
             return;
         }
 
         String destination = parsedMessage.get("destination");
+        String body = parsedMessage.get("body");
+        
+        System.out.println("[SEND] Client " + connectionId + " sending to: " + destination);
+        System.out.println("[SEND] Body preview: " + (body != null && body.length() > 50 ? body.substring(0, 50) + "..." : body));
+        
         if (destination == null) {
+            System.out.println("[SEND] ERROR: No destination header");
             sendError("No destination header");
             return;
         }
         
         // Check if client is subscribed to the channel
         if (!subscriptionIdToChannel.containsValue(destination)) {
+            System.out.println("[SEND] ERROR: Client " + connectionId + " not subscribed to destination: " + destination);
             sendError("Not subscribed to destination: " + destination);
             return;
         }
-        connections.send(destination, parsedMessage.get("body"));
+        
+        System.out.println("[SEND] Broadcasting message to channel: " + destination);
+        connections.send(destination, body);
+        
+        // Track file upload if message contains file information
+        trackFileUpload(body, destination);
         
         // Send receipt if requested
         String receipt = parsedMessage.get("receipt");
         if (receipt != null) {
             connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+            System.out.println("[SEND] Sent receipt: " + receipt);
+        }
+    }
+    
+    private void trackFileUpload(String body, String destination) {
+        if (body != null && body.contains("file name:") && username != null) {
+            // Extract filename from body (format: "user: X\nteam: Y\nfile name: Z")
+            String[] lines = body.split("\n");
+            for (String line : lines) {
+                if (line.startsWith("file name:")) {
+                    String filename = line.substring("file name:".length()).trim();
+                    if (!filename.isEmpty()) {
+                        Database.getInstance().trackFileUpload(username, filename, destination);
+                        System.out.println("[SEND] Tracked file upload: " + filename + " by " + username + " to " + destination);
+                    }
+                    break;
+                }
+            }
         }
     }
 
     private void Subscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
+            System.out.println("[SUBSCRIBE] ERROR: Client " + connectionId + " not logged in");
             sendError("Not logged in");
             return;
         }
         String destination = headers.get("destination");
         String id = headers.get("id");
         
+        System.out.println("[SUBSCRIBE] Client " + connectionId + " subscribing to: " + destination + ", subscription ID: " + id);
+        
         if (destination == null) {
+            System.out.println("[SUBSCRIBE] ERROR: Missing destination header");
             sendError("Missing destination header");
             return;
         }
@@ -177,42 +219,54 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             int subscriptionId = Integer.parseInt(id);
             subscriptionIdToChannel.put(subscriptionId, destination);
             connections.subscribe(destination, connectionId, subscriptionId);
+            System.out.println("[SUBSCRIBE] SUCCESS: Client " + connectionId + " subscribed to " + destination + " with ID " + subscriptionId);
             
             // Send receipt if requested
             String receipt = headers.get("receipt");
             if (receipt != null) {
                 connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+                System.out.println("[SUBSCRIBE] Sent receipt: " + receipt);
             }
         } catch (NumberFormatException | NullPointerException e) {
+            System.out.println("[SUBSCRIBE] ERROR: Invalid or missing subscription id: " + e.getMessage());
             sendError("Invalid or missing subscription id");
         }
     }
 
     private void Unsubscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
+            System.out.println("[UNSUBSCRIBE] ERROR: Client " + connectionId + " not logged in");
             sendError("Not logged in");
             return;
         }
         String id = headers.get("id");
+        
+        System.out.println("[UNSUBSCRIBE] Client " + connectionId + " unsubscribing from subscription ID: " + id);
         
         try {
             int subscriptionId = Integer.parseInt(id);
             String channel = subscriptionIdToChannel.remove(subscriptionId);
             if (channel != null) {
                 connections.unsubscribe(channel, connectionId);
+                System.out.println("[UNSUBSCRIBE] SUCCESS: Client " + connectionId + " unsubscribed from " + channel + " (ID: " + subscriptionId + ")");
+            } else {
+                System.out.println("[UNSUBSCRIBE] WARNING: Subscription ID " + subscriptionId + " not found for client " + connectionId);
             }
             
             // Send receipt if requested
             String receipt = headers.get("receipt");
             if (receipt != null) {
                 connections.send(connectionId, "RECEIPT\nreceipt-id:" + receipt + "\n\n");
+                System.out.println("[UNSUBSCRIBE] Sent receipt: " + receipt);
             }
         } catch (NumberFormatException | NullPointerException e) {
+            System.out.println("[UNSUBSCRIBE] ERROR: Invalid or missing subscription id: " + e.getMessage());
             sendError("Invalid or missing subscription id");
         }
     }
     
     private void sendError(String message) {
+        System.out.println("[ERROR] Sending error to client " + connectionId + ": " + message);
         connections.send(connectionId, "ERROR\nmessage:" + message + "\n\n");
         shouldTerminate = true;
         connections.disconnect(connectionId);
