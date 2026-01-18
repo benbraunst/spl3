@@ -70,21 +70,29 @@ def init_database():
 def execute_sql_command(sql_command: str) -> str:
     """Execute INSERT, UPDATE, DELETE commands"""
     try:
+        print(f"[SQL_COMMAND] Executing: {sql_command[:100]}..." if len(sql_command) > 100 else f"[SQL_COMMAND] Executing: {sql_command}")
         conn = sqlite3.connect(DB_FILE)
+        conn.execute("PRAGMA foreign_keys = ON")  # Enable foreign key constraints
         cursor = conn.cursor()
         cursor.execute(sql_command)
         conn.commit()
         rows_affected = cursor.rowcount
         conn.close()
-        return f"SUCCESS: {rows_affected} rows affected"
+        result = f"SUCCESS: {rows_affected} rows affected"
+        print(f"[SQL_COMMAND] Result: {result}")
+        return result
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        error_msg = f"ERROR: {str(e)}"
+        print(f"[SQL_COMMAND] {error_msg}")
+        return error_msg
 
 
 def execute_sql_query(sql_query: str) -> str:
     """Execute SELECT queries and return results"""
     try:
+        print(f"[SQL_QUERY] Executing: {sql_query[:100]}..." if len(sql_query) > 100 else f"[SQL_QUERY] Executing: {sql_query}")
         conn = sqlite3.connect(DB_FILE)
+        conn.execute("PRAGMA foreign_keys = ON")  # Enable foreign key constraints
         cursor = conn.cursor()
         cursor.execute(sql_query)
         results = cursor.fetchall()
@@ -100,11 +108,15 @@ def execute_sql_query(sql_query: str) -> str:
                 # Join fields with comma
                 formatted_rows.append(",".join(fields))
             result_str = "SUCCESS|" + "|".join(formatted_rows)
+            print(f"[SQL_QUERY] Result: {len(results)} row(s) returned")
             return result_str
         else:
+            print(f"[SQL_QUERY] Result: No rows returned")
             return "SUCCESS|"
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        error_msg = f"ERROR: {str(e)}"
+        print(f"[SQL_QUERY] {error_msg}")
+        return error_msg
 
 def handle_client(client_socket: socket.socket, addr: Tuple[str, int]):
     print(f"[{SERVER_NAME}] Client connected from {addr}")
@@ -115,8 +127,8 @@ def handle_client(client_socket: socket.socket, addr: Tuple[str, int]):
             if message == "":
                 break
 
-            print(f"[{SERVER_NAME}] Received:")
-            print(message)
+            print(f"[{SERVER_NAME}] Received from {addr}:")
+            print(f"  {message[:100]}..." if len(message) > 100 else f"  {message}")
 
             # Determine if it's a query (SELECT) or command (INSERT/UPDATE/DELETE)
             sql_upper = message.strip().upper()
@@ -125,7 +137,7 @@ def handle_client(client_socket: socket.socket, addr: Tuple[str, int]):
             else:
                 response = execute_sql_command(message)
             
-            print(f"[{SERVER_NAME}] Response: {response}")
+            print(f"[{SERVER_NAME}] Sending response to {addr}: {response[:100]}..." if len(response) > 100 else f"[{SERVER_NAME}] Sending response to {addr}: {response}")
             client_socket.sendall((response + "\0").encode('utf-8'))
 
     except Exception as e:
