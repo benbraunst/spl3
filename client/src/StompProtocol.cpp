@@ -255,7 +255,14 @@ void StompProtocol::processServerFrame(string frame) {
         }
     }
     else if (command == "ERROR") {
-        cout << "Error received: " << body << endl;
+        string errMessage = "";
+        if (headers.count("message")) {
+            errMessage = headers["message"];
+        }
+        if (!body.empty()) {
+            errMessage += "\n" + body;
+        }
+        cout << "Error received: " << errMessage << endl;
         isConnected = false;
         handler->close();
     }
