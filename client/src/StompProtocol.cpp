@@ -21,7 +21,9 @@ vector<string> split(const string& str, char delimiter) {
     string token;
     istringstream tokenStream(str);
     while (getline(tokenStream, token, delimiter)) {
-        tokens.push_back(token);
+        if (!token.empty()) {
+            tokens.push_back(token);
+        }
     }
     return tokens;
 }
