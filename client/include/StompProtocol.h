@@ -17,9 +17,11 @@ private:
     std::map<int, std::string> receiptActions; // receiptId -> action description (e.g., "disconnect")
     std::string currentUser;
     GameManager gameManager;
+    std::string connectedHost;
+    short connectedPort;
 
 public:
-    StompProtocol(ConnectionHandler* handler);
+    StompProtocol(ConnectionHandler* handler, std::string host, short port);
     void processKeyboardCommand(std::string line);
     void processServerFrame(std::string frame);
     bool shouldTerminate();

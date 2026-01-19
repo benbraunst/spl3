@@ -6,9 +6,10 @@
 
 using namespace std;
 
-StompProtocol::StompProtocol(ConnectionHandler* handler) : 
+StompProtocol::StompProtocol(ConnectionHandler* handler, std::string host, short port) : 
     handler(handler), isConnected(false), subscriptions(), 
-    receiptIdCounter(0), subscriptionIdCounter(0), receiptActions(), currentUser(""), gameManager() 
+    receiptIdCounter(0), subscriptionIdCounter(0), receiptActions(), currentUser(""), gameManager(),
+    connectedHost(host), connectedPort(port)
 {}
 
 bool StompProtocol::shouldTerminate() {
@@ -45,6 +46,14 @@ void StompProtocol::processKeyboardCommand(string line) {
         if (colonPos == string::npos) {
              cout << "Invalid host:port format" << endl;
              return;
+        }
+        
+        string host = hostPort.substr(0, colonPos);
+        short port = (short)stoi(hostPort.substr(colonPos + 1));
+        
+        if (host != connectedHost || port != connectedPort) {
+            cout << "Could not connect to server" << endl;
+            return;
         }
 
         currentUser = args[2];

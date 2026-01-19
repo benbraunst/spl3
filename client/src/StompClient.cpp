@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     }
     cout << "Connected!" << endl;
 
-    StompProtocol protocol(&connectionHandler);
+    StompProtocol protocol(&connectionHandler, host, port);
     cout << "Protocol initialized" << endl;
 
     // Thread 2: Socket Listener
