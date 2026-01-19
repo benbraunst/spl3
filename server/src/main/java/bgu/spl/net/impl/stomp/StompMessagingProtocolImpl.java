@@ -77,6 +77,10 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             case "UNSUBSCRIBE":
                 Unsubscribe(parsedMessage);
                 break;
+            default:
+                System.out.println("Unknown command: " + command);
+                sendError("Unknown command: " + command, parsedMessage);
+                break;
         }
     }
 
@@ -87,9 +91,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         
         // Validate STOMP version
         if(acceptVersion == null || !acceptVersion.contains("1.2")) {
-            connections.send(connectionId, "ERROR\nmessage:Unsupported STOMP version\n\n");
-            shouldTerminate = true;
-            connections.disconnect(connectionId);
+            sendError("Unsupported/unspecified STOMP version", headers);
             return;
         }
         
@@ -109,11 +111,11 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         } else {
             // Send appropriate error and disconnect
             if (status == LoginStatus.WRONG_PASSWORD){
-                connections.send(connectionId, "ERROR\nmessage:Wrong password\n\n");
+                sendError("Wrong password", headers);
                 System.out.println("Login failed: Wrong password"); // debug
             }
             else if (status == LoginStatus.ALREADY_LOGGED_IN){
-                connections.send(connectionId, "ERROR\nmessage:User already logged in\n\n");
+                sendError("User already logged in", headers);
                 System.out.println("Login failed: User already logged in"); // debug
             }
             shouldTerminate = true;
@@ -127,7 +129,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         String receipt = headers.get("receipt");
         if(receipt == null) {
             System.out.println("[DISCONNECT] ERROR: Missing receipt header");
-            sendError("Missing receipt header in DISCONNECT");
+            sendError("Missing receipt header in DISCONNECT", headers);
             return;
         }
         
@@ -144,7 +146,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private void Send(Map<String, String> parsedMessage) {
         if (!isLoggedIn) {
             System.out.println("[SEND] ERROR: Client " + connectionId + " not logged in");
-            sendError("Not logged in");
+            sendError("Not logged in", parsedMessage);
             return;
         }
 
@@ -157,14 +159,14 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         
         if (destination == null) {
             System.out.println("[SEND] ERROR: No destination header");
-            sendError("No destination header");
+            sendError("No destination header", parsedMessage);
             return;
         }
         
         // Check if client is subscribed to the channel
         if (!subscriptionIdToChannel.containsValue(destination)) {
             System.out.println("[SEND] ERROR: Client " + connectionId + " not subscribed to destination: " + destination);
-            sendError("Not subscribed to destination: " + destination);
+            sendError("Not subscribed to destination: " + destination, parsedMessage);
             return;
         }
         
@@ -188,7 +190,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private void Subscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
             System.out.println("[SUBSCRIBE] ERROR: Client " + connectionId + " not logged in");
-            sendError("Not logged in");
+            sendError("Not logged in", headers);
             return;
         }
         String destination = headers.get("destination");
@@ -198,7 +200,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         
         if (destination == null) {
             System.out.println("[SUBSCRIBE] ERROR: Missing destination header");
-            sendError("Missing destination header");
+            sendError("Missing destination header", headers);
             return;
         }
         
@@ -216,14 +218,14 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             }
         } catch (NumberFormatException | NullPointerException e) {
             System.out.println("[SUBSCRIBE] ERROR: Invalid or missing subscription id: " + e.getMessage());
-            sendError("Invalid or missing subscription id");
+            sendError("Invalid or missing subscription id", headers);
         }
     }
 
     private void Unsubscribe(Map<String, String> headers) {
         if (!isLoggedIn) {
             System.out.println("[UNSUBSCRIBE] ERROR: Client " + connectionId + " not logged in");
-            sendError("Not logged in");
+            sendError("Not logged in", headers);
             return;
         }
         String id = headers.get("id");
@@ -248,13 +250,19 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             }
         } catch (NumberFormatException | NullPointerException e) {
             System.out.println("[UNSUBSCRIBE] ERROR: Invalid or missing subscription id: " + e.getMessage());
-            sendError("Invalid or missing subscription id");
+            sendError("Invalid or missing subscription id", headers);
         }
     }
     
-    private void sendError(String message) {
+    private void sendError(String message, Map<String, String> headers) {
         System.out.println("[ERROR] Sending error to client " + connectionId + ": " + message);
-        connections.send(connectionId, "ERROR\nmessage:" + message + "\n\n");
+        String receipt = headers.get("receipt");
+            if (receipt != null) {
+                connections.send(connectionId, "ERROR\nmessage:" + message + "\nreceipt-id:" + receipt + "\n\n");
+            }
+            else {
+                    connections.send(connectionId, "ERROR\nmessage:" + message + "\n\n");
+            }
         shouldTerminate = true;
         connections.disconnect(connectionId);
     }
