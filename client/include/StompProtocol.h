@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <mutex>
 #include "../include/ConnectionHandler.h"
 #include "../include/GameManager.h"
 
@@ -19,6 +20,7 @@ private:
     GameManager gameManager;
     std::string connectedHost;
     short connectedPort;
+    std::mutex mtx;
 
 public:
     StompProtocol(ConnectionHandler* handler, std::string host, short port);

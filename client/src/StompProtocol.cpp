@@ -30,6 +30,7 @@ vector<string> split(const string& str, char delimiter) {
 
 void StompProtocol::processKeyboardCommand(string line) {
     if (line.empty()) return;
+    std::lock_guard<std::mutex> lock(mtx);
     vector<string> args = split(line, ' ');
     string command = args[0];
 
@@ -181,6 +182,7 @@ void StompProtocol::processKeyboardCommand(string line) {
 }
 
 void StompProtocol::processServerFrame(string frame) {
+    std::lock_guard<std::mutex> lock(mtx);
     istringstream stream(frame);
     string command;
     getline(stream, command);
