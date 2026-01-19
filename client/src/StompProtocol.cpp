@@ -46,36 +46,7 @@ void StompProtocol::processKeyboardCommand(string line) {
              cout << "Invalid host:port format" << endl;
              return;
         }
-        // Host and port are handled by StompClient main loop for reconnection / connection
-        // Protocol just assumes handler is ready or will be ready
-        // Wait, StompClient creates the protocol. If we are reconnecting, we might need a new connection logic?
-        // The assignment usually implies we connect once? Or we can reconnect?
-        // "The client should support running the client, connecting, disconnecting and reconnecting."
-        // But StompClient.cpp sets up ConnectionHandler.
-        // If "login" initiates the connection, then StompClient should wait for "login" before connect().
-        // BUT the assignment says "The client needs to handle two tasks simultaneously... reading user input... reading server responses".
-        // If we are not connected, we can't read server responses.
-        // Let's assume StompClient main handles the TCP connection, OR `processKeyboardCommand` triggers it.
-        // Given the signature `processKeyboardCommand(string line)`, it doesn't take the handler reference again if it changed.
-        
-        // Actually, the standard way in these assignments is that the Main loop checks if connected.
-        // If the user types "login", we might expect the TCP connection to exist?
-        // No, usually "login" *Command* initiates the STOMP CONNECT.
-        // But we need a TCP connection first.
-        // If the Main creates ConnectionHandler with parsed arguments, it might already be connected.
-        
-        // Let's look at StompClient main loop plan again.
-        // Main connects TCP.
-        // Then loop.
-        // Wait, if I logout, I send DISCONNECT.
-        // STOMP DISCONNECT usually closes the socket?
-        // If so, "login" again would need to re-establish TCP.
-        // If ConnectionHandler is passed to Protocol, Protocol can use it.
-        // But ConnectionHandler takes host/port in constructor.
-        
-        // Let's assume for now the TCP is managed outside or persisting.
-        // We will just send CONNECT frame.
-        
+
         currentUser = args[2];
         string password = args[3];
         
@@ -86,10 +57,7 @@ void StompProtocol::processKeyboardCommand(string line) {
         frame += "passcode:" + password + "\n";
         frame += "\n";
         
-        handler->sendFrameAscii(frame, '\0'); // Assuming specific send method or just sendLine with delimiters?
-        // ConnectionHandler usually sends lines. We need to implement sendFrame.
-        // We'll trust ConnectionHandler::sendFrameAscii (implied needs check) or use sendBytes.
-        // I will use `sendFrameAscii` placeholder and check ConnectionHandler.
+        handler->sendFrameAscii(frame, '\0');
     }
     else if (command == "join") {
         if (!isConnected) { cout << "Not connected" << endl; return; }
@@ -175,30 +143,22 @@ void StompProtocol::processKeyboardCommand(string line) {
             
             frame += "general game updates:\n";
             for (auto const& pair : ev.get_game_updates()) {
-                frame += "\t" + pair.first + ":" + pair.second + "\n";
+                frame += pair.first + ":" + pair.second + "\n";
             }
             
             frame += "team a updates:\n";
              for (auto const& pair : ev.get_team_a_updates()) {
-                frame += "\t" + pair.first + ":" + pair.second + "\n";
+                frame += pair.first + ":" + pair.second + "\n";
             }
              
             frame += "team b updates:\n";
              for (auto const& pair : ev.get_team_b_updates()) {
-                frame += "\t" + pair.first + ":" + pair.second + "\n";
+                frame += pair.first + ":" + pair.second + "\n";
             }
             
             frame += "description:\n" + ev.get_discription() + "\n";
             
             handler->sendFrameAscii(frame, '\0');
-            
-            // Add to local storage too? No, usually we only store on MESSAGE.
-            // But if we report it, we are the source.
-            // "The client should print the event to the screen..."
-            // Usually we rely on the server reflecting it back?
-            // "If the server echoes the messages back to the sender... yes."
-            // But STOMP usually broadcasts to "subscribers". 
-            // If we are subscribed, we get it back.
         }
     }
     else if (command == "summary") {
@@ -231,20 +191,9 @@ void StompProtocol::processServerFrame(string frame) {
     
     // Parse body
     string body;
-    // The rest of the stream is body.
-    // getline consumes delimiter, so we read until end?
-    // Using stringstream iterator might be better.
-    // Or just appending lines?
-    // The body might contain newlines.
-    
-    // NOTE: current pos is after the empty line.
-    // getline(stream, body, '\0'); // read until null char?
-    // frame string passed here usually contains everything up to \0.
-    // But processServerFrame likely receives the string WITHOUT the \0 (handled by ConnectionHandler).
-    // Let's assume remaining stream content is body.
-     stringstream bodyStream;
-     bodyStream << stream.rdbuf();
-     body = bodyStream.str();
+    stringstream bodyStream;
+    bodyStream << stream.rdbuf();
+    body = bodyStream.str();
 
     if (command == "CONNECTED") {
         isConnected = true;
@@ -265,15 +214,6 @@ void StompProtocol::processServerFrame(string frame) {
             }
         }
         
-        // Also need "user" who sent it?
-        // It's in the body "user:..." field I serialized.
-        // We can parse it from body in Event(body) or do it here.
-        // Let's assume Event helps or we parse manually.
-        // Re-parsing known fields from Event object?
-        // Actually, the Event object doesn't have "user" field in the starter code.
-        // But GameManager needs it.
-        // We'll parse "user" from the body manually before passing to Event.
-        
         string user = "";
         istringstream bodyS(body);
         string l;
@@ -287,8 +227,6 @@ void StompProtocol::processServerFrame(string frame) {
         
         gameManager.addEvent(ev, user, gameName);
         cout << "Received key press: " << ev.get_name() << endl; // Debug print or requirement?
-        // Assignment often asks to just store updates, but for verification users want to see it.
-        // Let's print the whole event or just a summary.
         cout << "Received event: " << ev.get_name() << " in game: " << gameName << endl;
     }
     else if (command == "RECEIPT") {

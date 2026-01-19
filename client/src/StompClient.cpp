@@ -7,11 +7,6 @@
 
 using namespace std;
 
-// Synchronization flag? 
-// Actually processKeyboardCommand logic handles disconnection which stops 'isConnected' flag.
-// If socket closes, getFrameAscii returns false, thread should stop.
-// If keyboard sees disconnect, it sends frame.
-
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         cerr << "Usage: " << argv[0] << " host port" << endl << endl;
