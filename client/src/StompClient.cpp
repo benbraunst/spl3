@@ -81,11 +81,6 @@ int main(int argc, char *argv[]) {
             });
             
             isConnected = true;
-            // Send CONNECT frame manually via protocol logic (simulating keyboard input for consistency or direct call)
-            // But wait, the protocol handles the "login" command logic internally? 
-            // processKeyboardCommand("login ...") inside StompProtocol usually parses the line and sends CONNECT.
-            
-            // So we just pass the full line to the protocol!
             protocol->processKeyboardCommand(line);
             
         } else if (command == "logout") {
@@ -94,10 +89,8 @@ int main(int argc, char *argv[]) {
                 continue;
             }
             protocol->processKeyboardCommand(line);
-            // The protocol will send DISCONNECT and handle key release. 
-            // The socket thread will detect termination eventually (after RECEIPT or close).
-            
-            // Wait for thread to finish?
+
+            // Wait for socket thread to finish
             if (socketThread && socketThread->joinable()) {
                 socketThread->join();
                 delete socketThread;
