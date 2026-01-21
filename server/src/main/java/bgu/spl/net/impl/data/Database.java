@@ -25,7 +25,7 @@ public class Database {
 	
 	/**
 	 * Mark all login sessions without logout_time as logged out
-	 * This handles cases where the server crashed or was restarted
+	 * Handles cases where the server crashed or was restarted
 	 */
 	private void cleanupIncompleteSessions() {
 		System.out.println("[Database] Cleaning up incomplete login sessions from previous server run...");
@@ -299,7 +299,7 @@ public class Database {
 	 * @param filename Name of the file
 	 * @param gameChannel Game channel the file was reported to
 	 */
-	public void trackFileUpload(String username, String filename, String gameChannel) {
+	public void logFile(String username, String filename, String gameChannel) {
 		System.out.println("[Database] Tracking file upload - User: " + username + ", File: " + filename + ", Channel: " + gameChannel);
 		String sql = String.format(
 			"INSERT INTO file_tracking (username, filename, upload_time, game_channel) " +

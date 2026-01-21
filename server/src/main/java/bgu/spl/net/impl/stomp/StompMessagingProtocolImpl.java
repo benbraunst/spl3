@@ -175,7 +175,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         
         // Track file upload if message contains file information
         if(fileName != null) {
-            Database.getInstance().trackFileUpload(username, fileName, destination);
+            Database.getInstance().logFile(username, fileName, destination);
                 System.out.println("[SEND] Tracked file upload: " + fileName + " by " + username + " to " + destination);
         }
         
