@@ -21,6 +21,9 @@ public class Database {
 		
 		// Clean up any incomplete login sessions from previous server run
 		cleanupIncompleteSessions();
+		
+		// Load all users from SQL into memory
+		loadUsersFromSQL();
 	}
 	
 	/**
@@ -42,6 +45,40 @@ public class Database {
 		} else {
 			System.err.println("[Database] WARNING: Failed to cleanup incomplete sessions: " + result);
 		}
+	}
+	
+	/**
+	 * Load all users from SQL database into in-memory userMap
+	 * Keeps userMap synchronized with SQL users table
+	 */
+	private void loadUsersFromSQL() {
+		System.out.println("[Database] Loading users from SQL into memory...");
+		String sql = "SELECT username, password FROM users";
+		String result = executeSQL(sql);
+		
+		if (result.startsWith("ERROR")) {
+			System.err.println("[Database] WARNING: Failed to load users from SQL: " + result);
+			return;
+		}
+		
+		String[] rows = result.split("\\|");
+		int userCount = 0;
+		
+		// Skip first element (SUCCESS message)
+		for (int i = 1; i < rows.length; i++) {
+			String[] fields = rows[i].split(",");
+			if (fields.length >= 2) {
+				String username = fields[0];
+				String password = fields[1];
+				
+				// Create User object with temporary connectionId (-1 means not connected)
+				User user = new User(-1, username, password);
+				userMap.put(username, user);
+				userCount++;
+			}
+		}
+		
+		System.out.println("[Database] Loaded " + userCount + " user(s) from SQL into memory");
 	}
 
 	public static Database getInstance() {
@@ -101,84 +138,23 @@ public class Database {
 			return LoginStatus.CLIENT_ALREADY_CONNECTED;
 		}
 		
-		// Check if user exists in SQL database
-		String checkUserSQL = String.format(
-			"SELECT username, password FROM users WHERE username='%s'",
-			escapeSql(username)
-		);
-		String result = executeSQL(checkUserSQL);
-		
-		if (result.startsWith("ERROR")) {
-			System.err.println("[Database] CRITICAL: SQL error checking user: " + result);
-		}
-		
-		String[] parts = result.split("\\|");
-		boolean userExistsInSQL = parts.length > 1;
-		
-		if (!userExistsInSQL) {
-			// New user - register in SQL
-			System.out.println("[Database] New user - registering in SQL: " + username);
-			String insertSQL = String.format(
-				"INSERT INTO users (username, password, registration_date) VALUES ('%s', '%s', datetime('now'))",
-				escapeSql(username), escapeSql(password)
-			);
-			String insertResult = executeSQL(insertSQL);
-			
-			if (insertResult.startsWith("ERROR")) {
-				System.err.println("[Database] CRITICAL: Failed to register user in SQL: " + insertResult);
-			}
-			
-			System.out.println("[Database] New user persisted to SQL database: " + username);
-			
-			// Add to in-memory map
-			User user = new User(connectionId, username, password);
-			user.login();
-			addUser(user);
-			
-			// Log login
+		// Try to add new user first
+		if (addNewUserCase(connectionId, username, password)) {
+			// New user added successfully
 			logLogin(username);
 			System.out.println("[Database] Login successful: ADDED_NEW_USER");
 			return LoginStatus.ADDED_NEW_USER;
-		} else {
-			// User exists in SQL - verify password
-			String[] userData = parts[1].split(",");
-			String storedPassword = userData[1];
-			
-			if (!storedPassword.equals(password)) {
-				System.out.println("[Database] Login failed: WRONG_PASSWORD");
-				return LoginStatus.WRONG_PASSWORD;
-			}
-			
-			// Check if user is already logged in via SQL
-			String checkLoginSQL = String.format(
-				"SELECT username FROM login_history WHERE username='%s' AND logout_time IS NULL",
-				escapeSql(username)
-			);
-			String loginCheckResult = executeSQL(checkLoginSQL);
-			String[] loginParts = loginCheckResult.split("\\|");
-			
-			if (loginParts.length > 1) {
-				System.out.println("[Database] Login failed: ALREADY_LOGGED_IN");
-				return LoginStatus.ALREADY_LOGGED_IN;
-			}
-			
-			// Login successful - update in-memory map
-			User user = userMap.get(username);
-			if (user == null) {
-				// User exists in SQL but not in memory (server restart)
-				user = new User(connectionId, username, password);
-				userMap.put(username, user);
-				System.out.println("[Database] Loaded user from SQL into memory");
-			}
-			user.login();
-			user.setConnectionId(connectionId);
-			connectionsIdMap.put(connectionId, user);
-			
-			// Log login
+		}
+		
+		// User exists - verify credentials and login status
+		LoginStatus status = userExistsCase(connectionId, username, password);
+		
+		if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY) {
 			logLogin(username);
 			System.out.println("[Database] Login successful: LOGGED_IN_SUCCESSFULLY");
-			return LoginStatus.LOGGED_IN_SUCCESSFULLY;
 		}
+		
+		return status;
 	}
 
 	private void logLogin(String username) {
@@ -189,8 +165,6 @@ public class Database {
 		executeSQL(sql);
 	}
 
-	// Deprecated - logic moved to login() method
-	@Deprecated
 	private LoginStatus userExistsCase(int connectionId, String username, String password) {
 		// Check SQL for user data and login status
 		String checkUserSQL = String.format(
@@ -239,10 +213,10 @@ public class Database {
 		// Login successful - update in-memory map
 		User user = userMap.get(username);
 		if (user == null) {
-			// Load from SQL into memory
+			// User exists in SQL but not in memory (shouldn't happen after loadUsersFromSQL, but handle it)
 			user = new User(connectionId, username, password);
 			userMap.put(username, user);
-			System.out.println("[Database] Loaded user from SQL into memory");
+			System.out.println("[Database] Added user from SQL into memory");
 		}
 		user.login();
 		user.setConnectionId(connectionId);
@@ -251,7 +225,6 @@ public class Database {
 		return LoginStatus.LOGGED_IN_SUCCESSFULLY;
 	}
 
-	@Deprecated
 	private boolean addNewUserCase(int connectionId, String username, String password) {
 		// Check SQL to see if user exists
 		String checkUserSQL = String.format(
@@ -263,10 +236,26 @@ public class Database {
 		boolean userExistsInSQL = parts.length > 1;
 		
 		if (!userExistsInSQL) {
-			// User doesn't exist in SQL - add to both SQL and memory
+			// New user - register in SQL
+			System.out.println("[Database] New user - registering in SQL: " + username);
+			String insertSQL = String.format(
+				"INSERT INTO users (username, password, registration_date) VALUES ('%s', '%s', datetime('now'))",
+				escapeSql(username), escapeSql(password)
+			);
+			String insertResult = executeSQL(insertSQL);
+			
+			if (insertResult.startsWith("ERROR")) {
+				System.err.println("[Database] CRITICAL: Failed to register user in SQL: " + insertResult);
+				return false;
+			}
+			
+			System.out.println("[Database] New user persisted to SQL database: " + username);
+			
+			// Add to in-memory map
 			User user = new User(connectionId, username, password);
 			user.login();
 			addUser(user);
+			
 			return true;
 		}
 		return false;
