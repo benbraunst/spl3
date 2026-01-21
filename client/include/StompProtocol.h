@@ -24,6 +24,12 @@ private:
 
 public:
     StompProtocol(ConnectionHandler* handler, std::string host, short port);
+    ~StompProtocol() = default;
+    
+    // Delete copy constructor and assignment operator (non-copyable due to pointer members)
+    StompProtocol(const StompProtocol&) = delete;
+    StompProtocol& operator=(const StompProtocol&) = delete;
+    
     void processKeyboardCommand(std::string line);
     void processServerFrame(std::string frame);
     bool shouldTerminate();

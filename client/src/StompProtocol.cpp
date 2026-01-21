@@ -9,7 +9,7 @@ using namespace std;
 StompProtocol::StompProtocol(ConnectionHandler* handler, std::string host, short port) : 
     handler(handler), isConnected(false), subscriptions(), 
     receiptIdCounter(0), subscriptionIdCounter(0), receiptActions(), currentUser(""), gameManager(),
-    connectedHost(host), connectedPort(port)
+    connectedHost(host), connectedPort(port), mtx()
 {}
 
 bool StompProtocol::shouldTerminate() {
